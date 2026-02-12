@@ -23,6 +23,7 @@ const env = EnvSchema.parse({
   DATABASE_URL: process.env.DATABASE_URL,
   CW_GRAPHQL_URL: process.env.CW_GRAPHQL_URL,
   CW_APP_VERSION: process.env.CW_APP_VERSION,
+  CW_FIREBASE_WEB_API_KEY: process.env.CW_FIREBASE_WEB_API_KEY,
   FIREBASE_API_KEY: process.env.FIREBASE_API_KEY,
   JWT_SECRET: process.env.JWT_SECRET
 });
@@ -81,13 +82,20 @@ server.post("/auth/login", async (req, reply) => {
   const parsed = CustomTokenResponse.parse(raw);
   const customToken = parsed.data.loginForCustomToken.customToken;
 
-  // 2) firebase sign-in
-  const signIn = await firebaseSignInWithCustomToken(env.FIREBASE_API_KEY, customToken);
-  const expiresIn = Number(signIn.expiresIn ?? 0);
-  const expiresAt = Date.now() + Math.max(0, expiresIn) * 1000;
+// 2) Identity Toolkit sign-in (Craft World style; no admin secrets)
+const apiKey = env.CW_FIREBASE_WEB_API_KEY || env.FIREBASE_API_KEY;
 
-  // 3) lookup uid (localId)
-  const uid = await firebaseLookupUid(env.FIREBASE_API_KEY, signIn.idToken);
+if (!apiKey) {
+  throw new Error("Missing CW_FIREBASE_WEB_API_KEY (Firebase Web API key used for Identity Toolkit).");
+}
+
+const signIn = await firebaseSignInWithCustomToken(apiKey, customToken);
+const expiresIn = Number(signIn.expiresIn ?? 0);
+const expiresAt = Date.now() + Math.max(0, expiresIn) * 1000;
+
+// 3) lookup uid (localId)
+const uid = await firebaseLookupUid(apiKey, signIn.idToken);
+
 
   // upsert user
   const user = await prisma.user.upsert({
