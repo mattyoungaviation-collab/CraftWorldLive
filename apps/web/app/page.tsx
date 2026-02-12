@@ -88,29 +88,10 @@ export default function Page() {
       </div>
 
       <div style={{ marginTop: 16, padding: 12, border: "1px solid #eee", borderRadius: 10 }}>
-        <div>
-          <b>Status:</b> {status}
-        </div>
-        <div>
-          <b>Address:</b> {address || "—"}
-        </div>
-        <div>
-          <b>Session token:</b> {sessionToken ? sessionToken.slice(0, 24) + "…" : "—"}
-        </div>
-        <div>
-          <b>CraftWorld idToken:</b> {idToken ? idToken.slice(0, 24) + "…" : "—"}
-        </div>
-      </div>
-    </div>
-  );
-}
+        <div><b>Status:</b> {status}</div>
         <div><b>Address:</b> {address || "—"}</div>
         <div><b>Session token:</b> {sessionToken ? sessionToken.slice(0, 24) + "…" : "—"}</div>
         <div><b>CraftWorld idToken:</b> {idToken ? idToken.slice(0, 24) + "…" : "—"}</div>
-      </div>
-
-      <div style={{ marginTop: 18, fontSize: 12, color: "#666" }}>
-        Replace <code>REPLACE_WITH_YOUR_WALLETCONNECT_PROJECT_ID</code> with your WalletConnect Cloud Project ID.
       </div>
     </div>
   );
