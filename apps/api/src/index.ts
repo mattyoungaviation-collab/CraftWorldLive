@@ -112,12 +112,13 @@ server.post("/auth/login", async (req, reply) => {
 
 // --- Session-protected profile APIs ---
 
-server.addHook("preHandler", async (req, reply) => {
+server.addHook("preHandler", async (req) => {
   if (req.url.startsWith("/profiles")) {
     const auth = req.headers.authorization;
     if (!auth?.startsWith("Bearer ")) throw server.httpErrors.unauthorized();
-    const t = auth.slice("Bearer ".length);
-    await req.jwtVerify({ token: t });
+
+    // ✅ fastify-jwt reads and verifies Bearer token automatically
+    await req.jwtVerify();
   }
 });
 
