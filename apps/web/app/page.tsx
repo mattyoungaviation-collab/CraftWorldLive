@@ -5,11 +5,6 @@ import { useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:10000";
 
-const WC_PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
-if (!WC_PROJECT_ID) {
-  throw new Error("Missing NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID");
-}
-
 export default function Page() {
   const [provider, setProvider] = useState<any>(null);
   const [address, setAddress] = useState<string>("");
@@ -19,8 +14,15 @@ export default function Page() {
 
   const connect = async () => {
     setStatus("Connecting WalletConnect v2...");
+
+    const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+    if (!projectId) {
+      setStatus("Missing NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID (Render env var not set).");
+      return;
+    }
+
     const p = await EthereumProvider.init({
-      projectId: WC_PROJECT_ID,
+      projectId, // ✅ now typed as string
       chains: [2020], // Ronin mainnet chainId
       showQrModal: true,
       methods: ["eth_sendTransaction", "personal_sign", "eth_signTypedData", "eth_signTypedData_v4"],
@@ -74,9 +76,6 @@ export default function Page() {
   return (
     <div style={{ maxWidth: 840 }}>
       <h1 style={{ marginTop: 0 }}>Wallet Login</h1>
-      <p style={{ color: "#444" }}>
-        This uses WalletConnect v2 to connect your Ronin wallet, then performs the same Craft World nonce→signature→customToken→Firebase flow.
-      </p>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <button onClick={connect} style={{ padding: "10px 14px" }}>
