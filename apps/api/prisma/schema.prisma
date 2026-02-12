@@ -1,0 +1,34 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  wallet       String   @unique
+  cwUid        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  profiles     Profile[]
+}
+
+model Profile {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  // Store structured settings; we’ll refine shape later
+  workshop     Json     @default("{}")
+  mastery      Json     @default("{}")
+  workers      Int      @default(0)
+  factoryCount Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@unique([userId, name])
+}

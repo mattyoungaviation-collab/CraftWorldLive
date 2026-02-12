@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: craftworld-calculator-api
+    runtime: node
+    plan: starter
+    rootDir: apps/api
+    buildCommand: pnpm install --frozen-lockfile=false && pnpm build
+    startCommand: pnpm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: craftworld-calculator-db
+          property: connectionString
+      - key: CW_GRAPHQL_URL
+        value: https://craft-world.gg/graphql
+      - key: CW_APP_VERSION
+        value: "1.6.5"
+      - key: FIREBASE_API_KEY
+        value: "AIzaSyDgDDykbRrhbdfWUpm1BUgj4ga7d_-wy_g"
+  - type: web
+    name: craftworld-calculator-web
+    runtime: node
+    plan: starter
+    rootDir: apps/web
+    buildCommand: pnpm install --frozen-lockfile=false && pnpm build
+    startCommand: pnpm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: NEXT_PUBLIC_API_BASE_URL
+        value: https://craftworld-calculator-api.onrender.com
+
+databases:
+  - name: craftworld-calculator-db
+    plan: starter
