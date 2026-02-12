@@ -6,7 +6,7 @@ export const EnvSchema = z.object({
   DATABASE_URL: z.string(),
   CW_GRAPHQL_URL: z.string().default("https://craft-world.gg/graphql"),
   CW_APP_VERSION: z.string().default("1.6.5"),
-  FIREBASE_API_KEY: z.string(),
+  FIREBASE_API_KEY: z.string().optional(),
   JWT_SECRET: z.string().default("dev-secret-change-me")
 });
 
