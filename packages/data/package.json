@@ -13,5 +13,9 @@
   },
   "dependencies": {
     "papaparse": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/papaparse": "^5.3.16"
   }
 }
