@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import cookie from "@fastify/cookie";
 import sensible from "@fastify/sensible";
 import jwt from "@fastify/jwt";
 import { EnvSchema } from "./env.js";
@@ -12,14 +13,10 @@ import { z } from "zod";
 const prisma = new PrismaClient();
 const assets = loadAssets();
 
-const server = Fastify({ logger: true });
-
-await server.register(cors, { origin: true, credentials: true });
-await server.register(sensible);
-
 const env = EnvSchema.parse({
   NODE_ENV: process.env.NODE_ENV,
   PORT: process.env.PORT,
+  WEB_ORIGIN: process.env.WEB_ORIGIN,
   DATABASE_URL: process.env.DATABASE_URL,
   CW_GRAPHQL_URL: process.env.CW_GRAPHQL_URL,
   CW_APP_VERSION: process.env.CW_APP_VERSION,
@@ -28,14 +25,46 @@ const env = EnvSchema.parse({
   JWT_SECRET: process.env.JWT_SECRET
 });
 
+const server = Fastify({ logger: true, trustProxy: true });
+
+const allowedOrigins = (env.WEB_ORIGIN ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+await server.register(cors, {
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+
+    if (
+      allowedOrigins.includes(origin) ||
+      (env.NODE_ENV !== "production" && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))
+    ) {
+      return cb(null, true);
+    }
+
+    return cb(new Error("Not allowed by CORS"), false);
+  },
+  credentials: true
+});
+await server.register(cookie);
+await server.register(sensible);
 await server.register(jwt, { secret: env.JWT_SECRET });
+
+const sessionCookieName = "cw_session";
+const sessionCookieOptions = {
+  httpOnly: true,
+  secure: env.NODE_ENV === "production",
+  sameSite: env.NODE_ENV === "production" ? ("none" as const) : ("lax" as const),
+  path: "/",
+  maxAge: 60 * 60 * 24 * 7
+};
 
 server.get("/health", async () => ({ ok: true, service: "craftworld-calculator-api" }));
 server.get("/data/factories", async () => ({ ok: true, rows: assets.factories }));
 server.get("/data/mines", async () => ({ ok: true, rows: assets.mines }));
 
 server.get("/cw/prices", async () => {
-  // Returns Craft World exchangePriceList (COIN based) including recommendations.
   const body = {
     query: `
       query {
@@ -50,10 +79,7 @@ server.get("/cw/prices", async () => {
   return await cwGraphql<any>(env.CW_GRAPHQL_URL, env.CW_APP_VERSION, body);
 });
 
-
-// --- Auth: Craft World style ---
-
-server.post("/auth/nonce", async (req, reply) => {
+server.post("/auth/nonce", async (req) => {
   const Body = z.object({ walletAddress: z.string().min(6) });
   const { walletAddress } = Body.parse(req.body);
 
@@ -73,7 +99,6 @@ server.post("/auth/login", async (req, reply) => {
   });
   const { walletAddress, signature } = Body.parse(req.body);
 
-  // 1) exchange signature for custom token via Craft World
   const raw = await cwGraphql<any>(
     env.CW_GRAPHQL_URL,
     env.CW_APP_VERSION,
@@ -82,30 +107,25 @@ server.post("/auth/login", async (req, reply) => {
   const parsed = CustomTokenResponse.parse(raw);
   const customToken = parsed.data.loginForCustomToken.customToken;
 
-// 2) Identity Toolkit sign-in (Craft World style; no admin secrets)
-const apiKey = env.CW_FIREBASE_WEB_API_KEY || env.FIREBASE_API_KEY;
+  const apiKey = env.CW_FIREBASE_WEB_API_KEY || env.FIREBASE_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing CW_FIREBASE_WEB_API_KEY (Firebase Web API key used for Identity Toolkit).");
+  }
 
-if (!apiKey) {
-  throw new Error("Missing CW_FIREBASE_WEB_API_KEY (Firebase Web API key used for Identity Toolkit).");
-}
+  const signIn = await firebaseSignInWithCustomToken(apiKey, customToken);
+  const expiresIn = Number(signIn.expiresIn ?? 0);
+  const expiresAt = Date.now() + Math.max(0, expiresIn) * 1000;
 
-const signIn = await firebaseSignInWithCustomToken(apiKey, customToken);
-const expiresIn = Number(signIn.expiresIn ?? 0);
-const expiresAt = Date.now() + Math.max(0, expiresIn) * 1000;
+  const uid = await firebaseLookupUid(apiKey, signIn.idToken);
 
-// 3) lookup uid (localId)
-const uid = await firebaseLookupUid(apiKey, signIn.idToken);
-
-
-  // upsert user
   const user = await prisma.user.upsert({
     where: { wallet: walletAddress.toLowerCase() },
     create: { wallet: walletAddress.toLowerCase(), cwUid: uid ?? undefined },
     update: { cwUid: uid ?? undefined }
   });
 
-  // issue our own session JWT for profile APIs
   const token = await reply.jwtSign({ sub: user.id, wallet: user.wallet });
+  reply.setCookie(sessionCookieName, token, sessionCookieOptions);
 
   return {
     ok: true,
@@ -118,14 +138,39 @@ const uid = await firebaseLookupUid(apiKey, signIn.idToken);
   };
 });
 
-// --- Session-protected profile APIs ---
+server.post("/auth/logout", async (_req, reply) => {
+  reply.clearCookie(sessionCookieName, sessionCookieOptions);
+  return { ok: true };
+});
+
+server.get("/auth/me", async (req, reply) => {
+  const bearer = req.headers.authorization?.startsWith("Bearer ")
+    ? req.headers.authorization.slice("Bearer ".length)
+    : "";
+  const cookieToken = req.cookies[sessionCookieName] ?? "";
+  const token = bearer || cookieToken;
+
+  if (!token) return reply.code(401).send({ ok: false });
+
+  try {
+    const decoded = await server.jwt.verify<{ sub: string; wallet: string }>(token);
+    return { ok: true, user: { id: decoded.sub, wallet: decoded.wallet } };
+  } catch {
+    return reply.code(401).send({ ok: false });
+  }
+});
 
 server.addHook("preHandler", async (req) => {
   if (req.url.startsWith("/profiles")) {
-    const auth = req.headers.authorization;
-    if (!auth?.startsWith("Bearer ")) throw server.httpErrors.unauthorized();
+    const bearer = req.headers.authorization?.startsWith("Bearer ")
+      ? req.headers.authorization.slice("Bearer ".length)
+      : "";
+    const cookieToken = req.cookies[sessionCookieName] ?? "";
+    const token = bearer || cookieToken;
 
-    // ✅ fastify-jwt reads and verifies Bearer token automatically
+    if (!token) throw server.httpErrors.unauthorized();
+
+    req.headers.authorization = `Bearer ${token}`;
     await req.jwtVerify();
   }
 });
@@ -194,7 +239,6 @@ server.post("/cw/account/workshop", async (req) => {
 });
 
 server.post("/cw/account/mastery", async (req) => {
-  // Mastery/proficiency levels by symbol (claimedLevel).
   const Body = z.object({ idToken: z.string().min(10) });
   const { idToken } = Body.parse(req.body);
   const body = {
@@ -214,7 +258,6 @@ server.post("/cw/account/mastery", async (req) => {
   return await cwGraphql<any>(env.CW_GRAPHQL_URL, env.CW_APP_VERSION, body, idToken);
 });
 
-// --- CW GraphQL proxy (so web never deals with CORS) ---
 server.post("/cw/graphql", async (req) => {
   const Body = z.object({ query: z.string(), variables: z.any().optional(), idToken: z.string().optional() });
   const { query, variables, idToken } = Body.parse(req.body);

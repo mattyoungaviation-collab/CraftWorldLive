@@ -99,3 +99,34 @@ pnpm dev
 2. Calculator page:
    - keep **Auto Pull** checked to auto-fetch Workshop + Proficiencies (mastery) and apply
    - uncheck to manually enter workshop% and mastery level
+
+
+## Auth persistence note (Render cross-origin)
+
+Root cause found: auth relied on in-memory React state during navigation and mixed token/cookie handling, so subsequent route loads could render as logged out before auth was restored. The API also used permissive CORS instead of explicit credentialed origins.
+
+Fix implemented:
+- API now allows credentialed CORS only for `WEB_ORIGIN` (comma-separated origins) and enables `trustProxy` for Render HTTPS.
+- API sets an HTTP-only session cookie on `/auth/login` and supports `/auth/me` + `/auth/logout`.
+- Web now uses a shared API helper that always sends `credentials: "include"` and restores auth state using `/auth/me`.
+- Backward compatibility kept: bearer token in `Authorization` still works.
+
+Why this is required: with different web/api origins, browsers only send cookies when all three are configured together: `SameSite=None; Secure` on cookie, `credentials: "include"` on fetch, and `Access-Control-Allow-Credentials: true` with explicit CORS origins.
+
+### Additional API env vars
+- `WEB_ORIGIN` = web origin(s), comma-separated (e.g. `https://<web>.onrender.com`)
+- `NODE_ENV` = `production`
+
+### Quick verification (cookie + auth)
+```bash
+# 1) Login in browser and inspect Set-Cookie on /auth/login
+# 2) Validate auth session (replace cookie value):
+curl -i https://<api>.onrender.com/auth/me \
+  -H 'Origin: https://<web>.onrender.com' \
+  -H 'Cookie: cw_session=<session_cookie>'
+
+# 3) CORS preflight should allow credentials for web origin
+curl -i -X OPTIONS https://<api>.onrender.com/auth/me \
+  -H 'Origin: https://<web>.onrender.com' \
+  -H 'Access-Control-Request-Method: GET'
+```

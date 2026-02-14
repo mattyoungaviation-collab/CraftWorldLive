@@ -12,7 +12,7 @@ import {
   multipliersForRow,
 } from "@craftworld/calc";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:10000";
+import { apiFetch } from "../../lib/api";
 
 function toPriceMapFromExchangePriceList(payload: any): PriceMap {
   const out: PriceMap = {};
@@ -59,7 +59,7 @@ export default function CalculatorPage() {
 
   useEffect(() => {
     (async () => {
-      const res = await fetch(`${API_BASE}/data/factories`);
+      const res = await apiFetch("/data/factories");
       const json = await res.json();
       const r = (json.rows || []) as FactoryRow[];
       setRows(r);
@@ -69,7 +69,7 @@ export default function CalculatorPage() {
 
   useEffect(() => {
     (async () => {
-      const res = await fetch(`${API_BASE}/cw/prices`);
+      const res = await apiFetch("/cw/prices");
       const json = await res.json();
       setPrices(toPriceMapFromExchangePriceList(json));
     })();
@@ -86,7 +86,7 @@ export default function CalculatorPage() {
       try {
         setPullStatus("Auto-pulling Workshop + Proficiencies from Craft World...");
 
-        const wsRes = await fetch(`${API_BASE}/cw/account/workshop`, {
+        const wsRes = await apiFetch("/cw/account/workshop", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ idToken }),
@@ -97,7 +97,7 @@ export default function CalculatorPage() {
         for (const w of wsList) wsMap[String(w.symbol).toUpperCase()] = Number(w.level) || 0;
         setPulledWorkshop(wsMap);
 
-        const mRes = await fetch(`${API_BASE}/cw/account/mastery`, {
+        const mRes = await apiFetch("/cw/account/mastery", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ idToken }),
