@@ -19,7 +19,8 @@
     "undici": "^6.21.0",
     "zod": "^3.23.8",
     "@prisma/client": "^6.2.1",
-    "@craftworld/data": "workspace:*"
+    "@craftworld/data": "workspace:*",
+    "@fastify/cookie": "^11.0.2"
   },
   "devDependencies": {
     "prisma": "^6.2.1",

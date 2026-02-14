@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:10000";
+import { apiFetch } from "../../lib/api";
+import { getIdToken, getSessionToken } from "../../lib/auth";
 
 export default function ProfilesPage() {
   const [sessionToken, setSessionToken] = useState<string>("");
@@ -16,30 +16,33 @@ export default function ProfilesPage() {
   const [status, setStatus] = useState<string>("");
 
   useEffect(() => {
-    const st = localStorage.getItem("cw.sessionToken") || "";
-    const it = localStorage.getItem("cw.idToken") || "";
+    const st = getSessionToken();
+    const it = getIdToken();
     setSessionToken(st);
     setIdToken(it);
+
+    (async () => {
+      const meRes = await apiFetch("/auth/me");
+      if (!meRes.ok) return;
+      await load();
+    })();
   }, []);
 
   const load = async () => {
-    const res = await fetch(`${API_BASE}/profiles`, {
-      headers: { authorization: `Bearer ${sessionToken}` }
-    });
+    const res = await apiFetch("/profiles");
+    if (!res.ok) return;
     const json = await res.json();
     setProfiles(json.profiles || []);
   };
 
   const fetchWorkshop = async () => {
     setStatus("Fetching workshop levels from Craft World...");
-    const res = await fetch(`${API_BASE}/cw/account/workshop`, {
+    const res = await apiFetch("/cw/account/workshop", {
       method: "POST",
-      headers: { "content-type": "application/json" },
       body: JSON.stringify({ idToken })
     });
     const json = await res.json();
     const list = json?.data?.account?.workshop || [];
-    // Convert to map {SYMBOL: level}
     const map: Record<string, number> = {};
     for (const w of list) map[w.symbol] = w.level;
     setWorkshop(map);
@@ -48,9 +51,8 @@ export default function ProfilesPage() {
 
   const fetchMastery = async () => {
     setStatus("Fetching mastery levels from Craft World...");
-    const res = await fetch(`${API_BASE}/cw/account/mastery`, {
+    const res = await apiFetch("/cw/account/mastery", {
       method: "POST",
-      headers: { "content-type": "application/json" },
       body: JSON.stringify({ idToken })
     });
     const json = await res.json();
@@ -62,22 +64,17 @@ export default function ProfilesPage() {
   };
 
   const save = async () => {
-    const res = await fetch(`${API_BASE}/profiles`, {
+    const res = await apiFetch("/profiles", {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${sessionToken}`
-      },
       body: JSON.stringify({ name, workers, factoryCount, workshop, mastery })
     });
-    await res.json();
+    if (!res.ok) return;
     await load();
   };
 
   const del = async (id: string) => {
-    await fetch(`${API_BASE}/profiles/${id}`, {
-      method: "DELETE",
-      headers: { authorization: `Bearer ${sessionToken}` }
+    await apiFetch(`/profiles/${id}`, {
+      method: "DELETE"
     });
     await load();
   };

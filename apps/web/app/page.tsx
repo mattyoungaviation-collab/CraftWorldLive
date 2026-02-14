@@ -1,9 +1,9 @@
 "use client";
 
 import EthereumProvider from "@walletconnect/ethereum-provider";
-import { useState } from "react";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:10000";
+import { useEffect, useState } from "react";
+import { apiFetch } from "../lib/api";
+import { getIdToken, getSessionToken, saveAuthTokens } from "../lib/auth";
 
 export default function Page() {
   const [provider, setProvider] = useState<any>(null);
@@ -11,6 +11,19 @@ export default function Page() {
   const [status, setStatus] = useState<string>("Disconnected");
   const [sessionToken, setSessionToken] = useState<string>("");
   const [idToken, setIdToken] = useState<string>("");
+
+  useEffect(() => {
+    setSessionToken(getSessionToken());
+    setIdToken(getIdToken());
+
+    (async () => {
+      const meRes = await apiFetch("/auth/me");
+      if (meRes.ok) {
+        const me = await meRes.json();
+        setStatus(`Authenticated as ${me?.user?.wallet || "wallet"}`);
+      }
+    })();
+  }, []);
 
   const connect = async () => {
     setStatus("Connecting WalletConnect v2...");
@@ -22,8 +35,8 @@ export default function Page() {
     }
 
     const p = await EthereumProvider.init({
-      projectId, // ✅ now typed as string
-      chains: [2020], // Ronin mainnet chainId
+      projectId,
+      chains: [2020],
       showQrModal: true,
       methods: ["eth_sendTransaction", "personal_sign", "eth_signTypedData", "eth_signTypedData_v4"],
       events: ["chainChanged", "accountsChanged", "disconnect"]
@@ -41,9 +54,8 @@ export default function Page() {
     if (!provider || !address) return;
 
     setStatus("Fetching nonce from API...");
-    const nonceRes = await fetch(`${API_BASE}/auth/nonce`, {
+    const nonceRes = await apiFetch("/auth/nonce", {
       method: "POST",
-      headers: { "content-type": "application/json" },
       body: JSON.stringify({ walletAddress: address })
     });
     const nonceJson = await nonceRes.json();
@@ -57,9 +69,8 @@ export default function Page() {
     })) as string;
 
     setStatus("Exchanging signature for tokens...");
-    const loginRes = await fetch(`${API_BASE}/auth/login`, {
+    const loginRes = await apiFetch("/auth/login", {
       method: "POST",
-      headers: { "content-type": "application/json" },
       body: JSON.stringify({ walletAddress: address, signature: sig })
     });
     const loginJson = await loginRes.json();
@@ -67,10 +78,8 @@ export default function Page() {
 
     setSessionToken(loginJson.sessionToken);
     setIdToken(loginJson.idToken);
+    saveAuthTokens(loginJson.sessionToken, loginJson.idToken);
     setStatus(`Logged in. UID: ${loginJson.uid || "unknown"}`);
-
-    localStorage.setItem("cw.sessionToken", loginJson.sessionToken);
-    localStorage.setItem("cw.idToken", loginJson.idToken);
   };
 
   return (

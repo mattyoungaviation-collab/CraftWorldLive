@@ -3,6 +3,7 @@ import { z } from "zod";
 export const EnvSchema = z.object({
   NODE_ENV: z.string().default("development"),
   PORT: z.coerce.number().default(10000),
+  WEB_ORIGIN: z.string().optional(),
 
   CW_GRAPHQL_URL: z.string().default("https://craft-world.gg/graphql"),
   CW_APP_VERSION: z.string().default("1.6.5"),
