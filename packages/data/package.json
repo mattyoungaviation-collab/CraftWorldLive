@@ -12,10 +12,9 @@
     "format": "prettier -w ."
   },
   "dependencies": {
-    "papaparse": "^5.4.1",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "@types/papaparse": "^5.3.16",
+    "papaparse": "^5.4.1"
   },
-  "devDependencies": {
-    "@types/papaparse": "^5.3.16"
-  }
+  "devDependencies": {}
 }
