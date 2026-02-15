@@ -1,9 +1,15 @@
 "use client";
 
-import { getConnectedAddress, getWalletConnectProvider } from "../lib/walletconnect";
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { getIdToken, getSessionToken, saveAuthTokens } from "../lib/auth";
+import {
+  connectWallet,
+  getConnectedAddress,
+  getStoredWalletAddress,
+  getWalletConnectProvider,
+  saveWalletAddress
+} from "../lib/walletconnect";
 
 export default function Page() {
   const [provider, setProvider] = useState<any>(null);
@@ -12,51 +18,55 @@ export default function Page() {
   const [sessionToken, setSessionToken] = useState<string>("");
   const [idToken, setIdToken] = useState<string>("");
 
-useEffect(() => {
-  setSessionToken(getSessionToken());
-  setIdToken(getIdToken());
+  useEffect(() => {
+    // Show persisted address immediately (prevents “Address: —” after navigation)
+    setAddress(getStoredWalletAddress());
 
-  (async () => {
-    const meRes = await apiFetch("/auth/me");
-    if (meRes.ok) {
-      const me = await meRes.json();
-      setStatus(`Authenticated as ${me?.user?.wallet || "wallet"}`);
-    }
+    setSessionToken(getSessionToken());
+    setIdToken(getIdToken());
 
-    // Rehydrate wallet address if there's an existing WC session
-    const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
-    if (projectId) {
+    (async () => {
+      // Validate existing session cookie / bearer compatibility
+      const meRes = await apiFetch("/auth/me");
+      if (meRes.ok) {
+        const me = await meRes.json();
+        setStatus(`Authenticated as ${me?.user?.wallet || "wallet"}`);
+      }
+
+      const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+      if (!projectId) return;
+
       try {
         const p = await getWalletConnectProvider(projectId);
         setProvider(p);
+
         const addr = await getConnectedAddress(p);
         if (addr) setAddress(addr);
       } catch {
         // ignore
       }
+    })();
+  }, []);
+
+  const connect = async () => {
+    setStatus("Connecting WalletConnect v2...");
+
+    const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+    if (!projectId) {
+      setStatus("Missing NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID (Render env var not set).");
+      return;
     }
-  })();
-}, []);
 
-const connect = async () => {
-  setStatus("Connecting WalletConnect v2...");
+    const p = await getWalletConnectProvider(projectId);
+    await connectWallet(p);
 
-  const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
-  if (!projectId) {
-    setStatus("Missing NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID (Render env var not set).");
-    return;
-  }
+    const addr = await getConnectedAddress(p);
+    setProvider(p);
+    setAddress(addr);
+    if (addr) saveWalletAddress(addr);
 
-  const p = await getWalletConnectProvider(projectId);
-
-  await p.connect(); // shows QR modal only when needed
-  const addr = await getConnectedAddress(p);
-
-  setProvider(p);
-  setAddress(addr);
-  setStatus(addr ? "Connected" : "Connected (no account?)");
-};
-
+    setStatus(addr ? "Connected" : "Connected (no account?)");
+  };
 
   const login = async () => {
     if (!provider || !address) return;
@@ -87,6 +97,10 @@ const connect = async () => {
     setSessionToken(loginJson.sessionToken);
     setIdToken(loginJson.idToken);
     saveAuthTokens(loginJson.sessionToken, loginJson.idToken);
+
+    // Persist wallet address too (UI survives navigation)
+    if (address) saveWalletAddress(address);
+
     setStatus(`Logged in. UID: ${loginJson.uid || "unknown"}`);
   };
 
