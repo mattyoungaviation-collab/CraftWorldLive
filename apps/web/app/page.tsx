@@ -1,6 +1,6 @@
 "use client";
 
-import EthereumProvider from "@walletconnect/ethereum-provider";
+import { getConnectedAddress, getWalletConnectProvider } from "../lib/walletconnect";
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { getIdToken, getSessionToken, saveAuthTokens } from "../lib/auth";
@@ -12,43 +12,51 @@ export default function Page() {
   const [sessionToken, setSessionToken] = useState<string>("");
   const [idToken, setIdToken] = useState<string>("");
 
-  useEffect(() => {
-    setSessionToken(getSessionToken());
-    setIdToken(getIdToken());
+useEffect(() => {
+  setSessionToken(getSessionToken());
+  setIdToken(getIdToken());
 
-    (async () => {
-      const meRes = await apiFetch("/auth/me");
-      if (meRes.ok) {
-        const me = await meRes.json();
-        setStatus(`Authenticated as ${me?.user?.wallet || "wallet"}`);
-      }
-    })();
-  }, []);
-
-  const connect = async () => {
-    setStatus("Connecting WalletConnect v2...");
-
-    const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
-    if (!projectId) {
-      setStatus("Missing NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID (Render env var not set).");
-      return;
+  (async () => {
+    const meRes = await apiFetch("/auth/me");
+    if (meRes.ok) {
+      const me = await meRes.json();
+      setStatus(`Authenticated as ${me?.user?.wallet || "wallet"}`);
     }
 
-    const p = await EthereumProvider.init({
-      projectId,
-      chains: [2020],
-      showQrModal: true,
-      methods: ["eth_sendTransaction", "personal_sign", "eth_signTypedData", "eth_signTypedData_v4"],
-      events: ["chainChanged", "accountsChanged", "disconnect"]
-    });
+    // Rehydrate wallet address if there's an existing WC session
+    const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+    if (projectId) {
+      try {
+        const p = await getWalletConnectProvider(projectId);
+        setProvider(p);
+        const addr = await getConnectedAddress(p);
+        if (addr) setAddress(addr);
+      } catch {
+        // ignore
+      }
+    }
+  })();
+}, []);
 
-    await p.connect();
-    const accounts = (await p.request({ method: "eth_accounts" })) as string[];
-    const addr = accounts?.[0] || "";
-    setProvider(p);
-    setAddress(addr);
-    setStatus(addr ? "Connected" : "Connected (no account?)");
-  };
+const connect = async () => {
+  setStatus("Connecting WalletConnect v2...");
+
+  const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+  if (!projectId) {
+    setStatus("Missing NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID (Render env var not set).");
+    return;
+  }
+
+  const p = await getWalletConnectProvider(projectId);
+
+  await p.connect(); // shows QR modal only when needed
+  const addr = await getConnectedAddress(p);
+
+  setProvider(p);
+  setAddress(addr);
+  setStatus(addr ? "Connected" : "Connected (no account?)");
+};
+
 
   const login = async () => {
     if (!provider || !address) return;
